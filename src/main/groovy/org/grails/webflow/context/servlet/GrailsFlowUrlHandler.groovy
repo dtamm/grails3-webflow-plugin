@@ -21,7 +21,7 @@ import org.grails.web.servlet.mvc.GrailsWebRequest
 import javax.servlet.http.HttpServletRequest
 
 import grails.web.mapping.UrlMappingsHolder
-import org.codehaus.groovy.grails.web.servlet.GrailsApplicationAttributes
+import org.grails.web.servlet.DefaultGrailsApplicationAttributes
 import org.springframework.context.ApplicationContext
 import org.springframework.context.ApplicationContextAware
 import org.springframework.util.Assert
@@ -39,13 +39,13 @@ class GrailsFlowUrlHandler extends DefaultFlowUrlHandler implements ApplicationC
     ApplicationContext applicationContext
 
     String getFlowId(HttpServletRequest request) {
-        request.getAttribute(GrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE) + "/" +
-        request.getAttribute(GrailsApplicationAttributes.ACTION_NAME_ATTRIBUTE)
+        request.getAttribute(DefaultGrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE) + "/" +
+        request.getAttribute(DefaultGrailsApplicationAttributes.ACTION_NAME_ATTRIBUTE)
     }
 
     String createFlowExecutionUrl(String flowId, String flowExecutionKey, HttpServletRequest request) {
         UrlMappingsHolder holder = applicationContext.getBean(UrlMappingsHolder.BEAN_ID)
-        def controllerName = request.getAttribute(GrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE)
+        def controllerName = request.getAttribute(DefaultGrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE)
         GrailsWebRequest webRequest= GrailsWebRequest.lookup(request)
         Map params = webRequest.params
         def newParams = [execution:flowExecutionKey]
@@ -99,7 +99,7 @@ class GrailsFlowUrlHandler extends DefaultFlowUrlHandler implements ApplicationC
         Assert.notNull applicationContext, "Property [applicationContext] must be set!"
 
         UrlMappingsHolder holder = applicationContext.getBean(UrlMappingsHolder.BEAN_ID)
-        def controllerName = request.getAttribute(GrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE)
+        def controllerName = request.getAttribute(DefaultGrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE)
         Map params = GrailsWebRequest.lookup(request).params
         def newParams = [:]
         newParams.putAll(params)

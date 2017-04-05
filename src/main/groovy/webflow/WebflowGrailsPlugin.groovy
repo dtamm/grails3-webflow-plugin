@@ -1,7 +1,6 @@
 package webflow
 
 import grails.plugins.*
-
 import org.grails.webflow.WebFlowPluginSupport
 
 class WebflowGrailsPlugin extends Plugin {
@@ -45,10 +44,41 @@ Brief summary/description of the plugin.
     // Online location of the plugin's browseable source code.
 //    def scm = [ url: "http://svn.codehaus.org/grails-plugins/" ]
 
-    def doWithSpring = WebFlowPluginSupport.doWithSpring
-    def doWithDynamicMethods = WebFlowPluginSupport.doWithDynamicMethods
-    def doWithApplicationContext = WebFlowPluginSupport.doWithApplicationContext
-    def onChange = WebFlowPluginSupport.onChange
+    // TODO: Rework so as we are not using WebFlowPluginSupport
+    /**
+     * Sub classes should override to provide implementations
+     *
+     * @return A closure that defines beans to be executed by Spring
+     */
+    @Override
+    Closure doWithSpring() {
+        WebFlowPluginSupport.doWithSpring
+    }
+
+    /**
+     * Invoked in a phase where plugins can add dynamic methods. Subclasses should override
+     */
+    @Override
+    void doWithDynamicMethods() {
+        WebFlowPluginSupport.doWithDynamicMethods.call(getApplicationContext(), getGrailsApplication())
+    }
+
+    /**
+     * Invokes once the {@link org.springframework.context.ApplicationContext} has been refreshed and after {#doWithDynamicMethods()} is invoked. Subclasses should override
+     */
+    @Override
+    void doWithApplicationContext() {
+        WebFlowPluginSupport.doWithApplicationContext.call(getApplicationContext())
+    }
+
+    /**
+     * Invoked when a object this plugin is watching changes
+     *
+     * @param event The event
+     */
+    void onChange(Map<String, Object> event) {
+        WebFlowPluginSupport.onChange.call(event, getGrailsApplication())
+    }
 
     void onConfigChange(Map<String, Object> event) {
         // TODO Implement code that is executed when the project configuration changes.

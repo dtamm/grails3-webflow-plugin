@@ -16,14 +16,13 @@ package org.grails.webflow.engine.builder
 
 import grails.util.GrailsNameUtils
 import grails.web.mapping.UrlMappingsHolder
-import org.codehaus.groovy.ast.expr.ConstantExpression
-import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.grails.webflow.PropertyExpression
 import org.springframework.binding.convert.ConversionService
 import org.springframework.binding.expression.ExpressionParser
 
 import java.beans.PropertyDescriptor
 
-import org.codehaus.groovy.grails.web.servlet.GrailsApplicationAttributes
+import org.grails.web.servlet.DefaultGrailsApplicationAttributes
 import org.springframework.beans.BeanUtils
 import org.springframework.binding.expression.support.StaticExpression
 import org.springframework.binding.mapping.Mapper
@@ -257,8 +256,8 @@ class FlowBuilder extends AbstractFlowBuilder implements GroovyObject, Applicati
         def renderAction = new ClosureInvokingAction({
             for (entry in flash.asMap()) {
                 def key = entry.key
-                if (key.startsWith(GrailsApplicationAttributes.ERRORS)) {
-                    key = key.substring(GrailsApplicationAttributes.ERRORS.length() + 1)
+                if (key.startsWith(DefaultGrailsApplicationAttributes.ERRORS)) {
+                    key = key.substring(DefaultGrailsApplicationAttributes.ERRORS.length() + 1)
                     def formObject = flow[key]
                     if (formObject) {
                         try {
@@ -590,7 +589,7 @@ class FlowInfoCapturer {
 
     def propertyMissing(String name) {
         if (propertyDescriptors.find { PropertyDescriptor pd -> pd.name == name}) {
-            return new PropertyExpression(new ConstantExpression(name), name)
+            return new PropertyExpression(name)
         }
 
         throw new MissingPropertyException(name,FlowInfoCapturer)

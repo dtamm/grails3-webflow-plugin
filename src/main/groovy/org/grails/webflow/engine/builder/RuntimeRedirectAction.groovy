@@ -16,8 +16,7 @@ package org.grails.webflow.engine.builder
 
 import grails.web.mapping.UrlCreator
 import grails.web.mapping.UrlMappingsHolder
-import org.codehaus.groovy.ast.expr.PropertyExpression
-
+import org.grails.webflow.PropertyExpression
 import org.springframework.webflow.action.AbstractAction
 import org.springframework.webflow.execution.Event
 import org.springframework.webflow.execution.RequestContext
@@ -49,7 +48,50 @@ class RuntimeRedirectAction extends AbstractAction {
 
     def resolveExpression(ExpressionDelegate delegate, expression) {
         if (expression instanceof PropertyExpression) {
-            return new GroovyShell(new Binding(delegate)).evaluate(expression.getValue())
+            // Ok, need to emulate enough...
+            // :P and repeated code - see UriRedirectAction
+            Binding binding = new Binding(new HashMap() {
+
+                @Override
+                boolean containsKey(Object key) {
+                    if(!key instanceof String) {
+                        return false
+                    }
+                    String normalizedKey = "" + key
+                    if(super.containsKey(normalizedKey)) {
+                        return true
+                    }
+                    try {
+                        Object output = delegate.getProperty(normalizedKey);
+                        return true
+                    }
+                    catch(MissingPropertyException eMPE) {
+                        return false
+                    }
+                }
+
+                @Override
+                boolean containsValue(Object value) {
+                    return false
+                }
+
+                @Override
+                Object get(Object key) {
+                    if(containsKey(key)) {
+                        String normalizedKey = "" + key
+                        if(super.containsKey(normalizedKey)) {
+                            return super.get(normalizedKey)
+                        }
+                        Object output = delegate.getProperty(normalizedKey)
+                        return output
+                    }
+                    return null
+                }
+            });
+            GroovyShell groovyShell = new GroovyShell(binding)
+            def script = expression.getValue()
+            def output = groovyShell.evaluate(script)
+            return output
         }
         return expression
     }

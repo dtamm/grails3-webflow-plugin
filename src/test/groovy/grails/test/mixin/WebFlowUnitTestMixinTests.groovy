@@ -3,7 +3,6 @@ package grails.test.mixin
 import grails.persistence.Entity
 import grails.test.mixin.domain.DomainClassUnitTestMixin
 import grails.test.mixin.webflow.WebFlowUnitTestMixin
-
 import org.junit.Test
 
 @TestMixin([WebFlowUnitTestMixin, DomainClassUnitTestMixin])
@@ -20,9 +19,14 @@ class WebFlowUnitTestMixinTests {
 
         breakfastFlow.eatBreakfast.action()
 
-        assert 'unableToEatBreakfast' == stateTransition
+        assert 'unableToEatBreakfast' == obtainTestState().stateTransition
         assert !conversation.meal.hotSauce
         assert conversation.meal.hasErrors()
+    }
+
+    // TODO: Revisit - :P
+    WebFlowUnitTestMixin.TestState obtainTestState() {
+        runtime.getValue("webFlowTestState")
     }
 
     @Test
@@ -46,7 +50,7 @@ class WebFlowUnitTestMixinTests {
         def event = breakfastFlow.chooseMainDish.on.nothing.action()
 
         assert event == 'success'
-        assert 'end' == stateTransition
+        assert 'end' == obtainTestState().stateTransition
         assert params.reason == conversation.meal.skipReason
         assert conversation.meal.id
     }
@@ -63,7 +67,7 @@ class WebFlowUnitTestMixinTests {
         def event = breakfastFlow.chooseMainDish.on.nothing.action()
 
         assert 'error' == event
-        assert 'chooseMainDish' == stateTransition
+        assert 'chooseMainDish' == obtainTestState().stateTransition
         assert !conversation.meal.skipReason
         assert !conversation.meal.id
     }
