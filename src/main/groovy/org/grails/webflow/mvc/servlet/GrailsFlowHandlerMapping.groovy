@@ -58,7 +58,13 @@ public class GrailsFlowHandlerMapping extends UrlMappingsHandlerMapping implemen
     }
 
     protected Object getHandlerForControllerClass(GrailsControllerClass controllerClass, HttpServletRequest request) {
-        final String actionName = (String) request.getAttribute(DefaultGrailsApplicationAttributes.ACTION_NAME_ATTRIBUTE);
+        String actionName = (String) request.getAttribute(DefaultGrailsApplicationAttributes.ACTION_NAME_ATTRIBUTE);
+        if(controllerClass != null && actionName == null) {
+            if(controllerClass.defaultAction != null && controllerClass.defaultAction.endsWith(FLOW_SUFFIX)) {
+                actionName = controllerClass.defaultAction.substring(0, controllerClass.defaultAction.length() - FLOW_SUFFIX.length())
+                request.setAttribute(DefaultGrailsApplicationAttributes.ACTION_NAME_ATTRIBUTE, actionName)
+            }
+        }
         if (controllerClass != null && actionName != null) {
             if (isFlowAction(controllerClass)) {
                 final String flowid = controllerClass.getLogicalPropertyName() + "/" + actionName;
@@ -96,6 +102,11 @@ public class GrailsFlowHandlerMapping extends UrlMappingsHandlerMapping implemen
         }
 
         GrailsControllerClass controllerClass = webFlowControllerUriCache.getControllerForUri(uri)
+        if(controllerClass != null && request.getAttribute(DefaultGrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE) == null) {
+            String controllerName = controllerClass.name
+            controllerName = controllerName[0].toLowerCase() + controllerName.substring(1)
+            request.setAttribute(DefaultGrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE, controllerName)
+        }
         return getHandlerForControllerClass(controllerClass, request)
     }
 

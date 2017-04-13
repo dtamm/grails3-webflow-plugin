@@ -73,8 +73,8 @@ class WebFlowPluginSupport {
         }
 
         flowHandlerMapping(GrailsFlowHandlerMapping, ref("grailsUrlMappingsHolder")) {
-            // run at slightly higher precedence
-            order = Integer.MAX_VALUE - 1
+            // Run slightly higher precedence than the default UrlHandlerMapping - is this correct?
+            order = -6
         }
         //conversationService(WebflowDefaultConversionService)
         sep(SpelExpressionParser)
@@ -193,6 +193,11 @@ class WebFlowPluginSupport {
             }
         }
         // Register the flows...
+        if(flows.size() > 0) {
+            String controllerPath = "/" + urlConverter.toUrlElement(c.name);
+            grailsFlowHandlerMapping.registerFlowMappingPattern(controllerPath, c)
+            grailsFlowHandlerMapping.registerFlowMappingPattern(controllerPath + "/", c)
+        }
         for (flow in flows) {
             String flowName = flow.key.substring(0, flow.key.length() - FLOW_SUFFIX.length());
             def flowId = ("${c.logicalPropertyName}/" + flowName).toString()

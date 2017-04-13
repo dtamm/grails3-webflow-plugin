@@ -18,7 +18,7 @@ class FlowAwareDefaultRequestStateLookupStrategy extends DefaultRequestStateLook
 
     private String stripFlow(String input) {
         if(input?.endsWith("Flow")) {
-            return input.substring(0, input.length() - "Flow")
+            return input.substring(0, input.length() - "Flow".length())
         }
         return input
     }
