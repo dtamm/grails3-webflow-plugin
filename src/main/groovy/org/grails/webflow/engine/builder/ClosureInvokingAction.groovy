@@ -14,15 +14,18 @@
  */
 package org.grails.webflow.engine.builder
 
+import grails.core.GrailsDomainClassProperty
 import grails.util.GrailsNameUtils
 import grails.util.Holders
+import grails.validation.ConstraintsEvaluator
 import grails.web.databinding.DataBindingUtils
 import org.codehaus.groovy.grails.web.binding.UriEditor
 
 import org.grails.core.support.GrailsDomainConfigurationUtil
+import org.grails.validation.DefaultConstraintEvaluator
 import org.grails.web.beans.PropertyEditorRegistryUtils
 import org.grails.web.servlet.mvc.GrailsWebRequest
-import org.grails.web.util.GrailsApplicationAttributes
+import org.grails.web.servlet.DefaultGrailsApplicationAttributes
 import grails.web.databinding.GrailsWebDataBinder
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -76,7 +79,8 @@ class ClosureInvokingAction extends AbstractAction {
                     RCH.currentRequestAttributes().setAttribute("${co.name}_${delegate.hashCode()}_errors",errors,0)
                 }
                 co.metaClass.hasErrors = {-> errors?.hasErrors() ? true : false }
-                def constrainedProperties = GrailsDomainConfigurationUtil.evaluateConstraints(co.newInstance())
+                def constrainedProperties = new DefaultConstraintEvaluator().evaluate(co.newInstance(), (GrailsDomainClassProperty[])null)
+                //def constrainedProperties = GrailsDomainConfigurationUtil.evaluateConstraints((Object)co.newInstance())
                 co.metaClass.getConstraints = {-> constrainedProperties }
                 co.metaClass.validate = {->
                     errors = new org.springframework.validation.BeanPropertyBindingResult(delegate, delegate.class.name)
@@ -122,10 +126,7 @@ class ClosureInvokingAction extends AbstractAction {
 
                     def params = noOfParams > 1 ? actionDelegate.params[GrailsNameUtils.getPropertyName(instance.class)] : actionDelegate.params
                     if (params) {
-//                        def binder = GrailsDataBinder.createBinder(instance, instance.class.name, actionDelegate.request)
-                        def binder = createBinder(instance, instance.class.name, actionDelegate.request)
-//                        binder.bind(params, actionDelegate.request)
-                        binder.bind(params, DataBindingUtils.createDataBindingSource(grailsApplication, instance.class, actionDelegate.request))
+                        DataBindingUtils.bindObjectToInstance(instance, params)
                     }
                     instance.validate()
                     commandInstances << instance
@@ -165,7 +166,7 @@ class ClosureInvokingAction extends AbstractAction {
                 if (entry.value instanceof GroovyObject) {
                     def errors = entry.value.errors
                     if (errors?.hasErrors()) {
-                        context.flashScope.put("${GrailsApplicationAttributes.ERRORS}_${entry.key}", errors)
+                        context.flashScope.put("${DefaultGrailsApplicationAttributes.ERRORS}_${entry.key}", errors)
                     }
                 }
             }
@@ -205,9 +206,10 @@ class ClosureInvokingAction extends AbstractAction {
      * @param request A request instance
      * @return A GrailsDataBinder instance
      */
+    // TODO: Remove
     public static def createBinder(Object target, String objectName, HttpServletRequest request) {
         final GrailsWebRequest webRequest = GrailsWebRequest.lookup(request);
-        PropertyEditorRegistry registry = request.getPropertyEditorRegistry();
+        PropertyEditorRegistry registry = webRequest.applicationContext.getBean(PropertyEditorRegistry)
         def binder = createBinder(target, registry);
         initializeFromWebRequest(binder, webRequest, target);
 
@@ -238,6 +240,7 @@ class ClosureInvokingAction extends AbstractAction {
      * @param objectName The name of the object
      * @return A GrailsDataBinder instance
      */
+    // TODO: Remove
     public static def createBinder(Object target, PropertyEditorRegistry registry) {
 
 //        GrailsWebDataBinder binder = new GrailsWebDataBinder(target);

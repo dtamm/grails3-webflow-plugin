@@ -2,17 +2,19 @@ package org.grails.webflow.support
 
 import grails.core.DefaultGrailsApplication
 import grails.util.GrailsWebMockUtil
-import grails.util.GrailsWebUtil
 import grails.core.GrailsApplication
 import grails.web.pages.GroovyPagesUriService
-import org.codehaus.groovy.grails.web.servlet.GrailsApplicationAttributes
+import org.grails.web.beans.PropertyEditorRegistryUtils
+import org.grails.web.servlet.DefaultGrailsApplicationAttributes
 import org.grails.core.artefact.ControllerArtefactHandler
 import org.grails.plugins.DefaultGrailsPlugin
 import org.grails.plugins.MockGrailsPluginManager
-import org.grails.support.MockApplicationContext
 import org.grails.web.pages.DefaultGroovyPagesUriService
 import org.grails.web.servlet.context.support.WebRuntimeSpringConfiguration
 import org.grails.web.servlet.mvc.GrailsWebRequest
+import org.grails.web.servlet.view.SitemeshLayoutViewResolver
+import org.grails.webflow.MockApplicationContext
+import org.springframework.beans.PropertyEditorRegistrySupport
 import org.springframework.context.support.StaticMessageSource
 import org.springframework.expression.spel.standard.SpelExpressionParser
 import org.springframework.web.context.WebApplicationContext
@@ -77,6 +79,10 @@ abstract class AbstractGrailsTagAwareFlowExecutionTests extends AbstractFlowExec
 
         grailsApplication.setApplicationContext(ctx)
 
+        // Need to setup PropertyEditorRegistry...
+        PropertyEditorRegistrySupport propertyEditorRegistry = new PropertyEditorRegistrySupport();
+        ctx.registerMockBean("propertyEditorRegistrySupport", propertyEditorRegistry)
+
         ctx.registerMockBean(GrailsApplication.APPLICATION_ID, grailsApplication)
         grailsApplication.addArtefact(ControllerArtefactHandler.TYPE, mockControllerClass)
 
@@ -110,6 +116,11 @@ abstract class AbstractGrailsTagAwareFlowExecutionTests extends AbstractFlowExec
 
         grailsApplication.mainContext = appCtx
 
+        SitemeshLayoutViewResolver sitemeshLayoutViewResolver = appCtx.getBean('jspViewResolver')
+        // TODO: Do this in a nicer way - but this is required otherwise we have issues where we get NPE as the views don't really exist
+        sitemeshLayoutViewResolver.innerViewResolver.resolveJspView = true
+        //
+
         flowBuilderServices = new FlowBuilderServices()
         MvcViewFactoryCreator viewCreator = new MvcViewFactoryCreator()
         viewCreator.viewResolvers = [appCtx.getBean('jspViewResolver')]
@@ -120,16 +131,18 @@ abstract class AbstractGrailsTagAwareFlowExecutionTests extends AbstractFlowExec
 
         servletContext.setAttribute(WebApplicationContext.ROOT_WEB_APPLICATION_CONTEXT_ATTRIBUTE, appCtx)
         mockManager.applicationContext = appCtx
-        servletContext.setAttribute(GrailsApplicationAttributes.APPLICATION_CONTEXT, appCtx)
+        servletContext.setAttribute(DefaultGrailsApplicationAttributes.APPLICATION_CONTEXT, appCtx)
         GroovySystem.metaClassRegistry.removeMetaClass(String)
         GroovySystem.metaClassRegistry.removeMetaClass(Object)
        //grailsApplication.tagLibClasses.each { tc -> GroovySystem.metaClassRegistry.removeMetaClass(tc.clazz)}
         mockManager.doDynamicMethods()
-
         webRequest = GrailsWebMockUtil.bindMockWebRequest(appCtx)
         request = webRequest.currentRequest
         request.characterEncoding = "utf-8"
         response = webRequest.currentResponse
+
+        PropertyEditorRegistryUtils.registerCustomEditors(webRequest, propertyEditorRegistry, Locale.default);
+        request.setAttribute(DefaultGrailsApplicationAttributes.PROPERTY_REGISTRY, propertyEditorRegistry);
 
         assert appCtx.grailsUrlMappingsHolder
     }

@@ -21,7 +21,7 @@ import org.grails.core.artefact.ControllerArtefactHandler;
 import grails.core.GrailsApplication;
 import grails.core.GrailsControllerClass;
 import grails.core.support.GrailsApplicationAware;
-import org.codehaus.groovy.grails.web.servlet.GrailsApplicationAttributes;
+import org.grails.web.servlet.DefaultGrailsApplicationAttributes;
 import org.grails.web.servlet.mvc.GrailsWebRequest;
 import org.springframework.util.Assert;
 import org.springframework.web.servlet.ModelAndView;
@@ -47,7 +47,7 @@ public class GrailsFlowHandlerAdapter extends FlowHandlerAdapter implements Grai
 
         if (controllerClass != null) {
             Object controllerInstance = getApplicationContext().getBean(controllerClass.getFullName());
-            request.setAttribute(GrailsApplicationAttributes.CONTROLLER, controllerInstance);
+            request.setAttribute(DefaultGrailsApplicationAttributes.CONTROLLER, controllerInstance);
         }
 
         return super.handle(request, response, handler);

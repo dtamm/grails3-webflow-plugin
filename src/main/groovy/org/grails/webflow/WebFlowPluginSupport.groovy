@@ -16,13 +16,16 @@
 package org.grails.webflow
 
 import grails.core.GrailsControllerClass
+import grails.util.GrailsClassUtils
+import grails.util.GrailsNameUtils
+import grails.web.UrlConverter
+import org.grails.core.util.ClassPropertyFetcher
 import org.grails.webflow.context.servlet.GrailsFlowUrlHandler
 import org.grails.webflow.engine.builder.FlowBuilder
 import org.grails.webflow.execution.GrailsFlowExecutorImpl
 import org.grails.webflow.mvc.servlet.GrailsFlowHandlerAdapter
 import org.grails.webflow.mvc.servlet.GrailsFlowHandlerMapping
 import org.grails.webflow.scope.ScopeRegistrar
-import org.springframework.core.convert.support.DefaultConversionService
 import org.springframework.context.ApplicationContext
 import org.springframework.expression.spel.standard.SpelExpressionParser
 import org.springframework.webflow.conversation.impl.SessionBindingConversationManager
@@ -40,6 +43,10 @@ import org.springframework.webflow.execution.repository.impl.DefaultFlowExecutio
 import org.springframework.webflow.execution.repository.snapshot.SerializedFlowExecutionSnapshotFactory
 import org.springframework.webflow.expression.spel.WebFlowSpringELExpressionParser
 import org.springframework.webflow.mvc.builder.MvcViewFactoryCreator
+import org.springframework.binding.convert.service.DefaultConversionService
+import java.beans.PropertyDescriptor
+import java.lang.reflect.Method
+import java.lang.reflect.Modifier
 
 /**
  * Provides the core Webflow functionality within Grails.
@@ -51,22 +58,30 @@ class WebFlowPluginSupport {
 
     static doWithSpring = {
 
-//        xmlns webflow:"http://www.springframework.org/schema/webflow"
+        // TODO: Remove - HACK :P - issue is that GrailsControllerClass assumes that ...Flow Closures are actions,
+        ///      and therefore uses the name of the closure as the default action for the controller in links; this is
+        //       a temporary hack to workaround this - but not sure how to solve this permanently. :(
+        requestStateLookupStrategy(FlowAwareDefaultRequestStateLookupStrategy)
+        //
+
+        // Keep this private else it causes issues....
+        DefaultConversionService conversionServiceRef = new DefaultConversionService()
+        //
 
         viewFactoryCreator(MvcViewFactoryCreator) {
             viewResolvers = ref('jspViewResolver')
         }
 
         flowHandlerMapping(GrailsFlowHandlerMapping, ref("grailsUrlMappingsHolder")) {
-            // run at slightly higher precedence
-            order = Integer.MAX_VALUE - 1
+            // Run slightly higher precedence than the default UrlHandlerMapping - is this correct?
+            order = -6
         }
-        conversationService(DefaultConversionService)
+        //conversationService(WebflowDefaultConversionService)
         sep(SpelExpressionParser)
-        expressionParser(WebFlowSpringELExpressionParser, sep ,conversationService)
+        expressionParser(WebFlowSpringELExpressionParser, sep, conversionServiceRef)
 
         flowBuilderServices(FlowBuilderServices) {
-            conversionService = conversationService
+            conversionService = conversionServiceRef
             expressionParser =  expressionParser
             viewFactoryCreator = viewFactoryCreator
         }
@@ -74,22 +89,26 @@ class WebFlowPluginSupport {
         flowRegistry(FlowDefinitionRegistryImpl)
 
         flowScopeRegistrar(ScopeRegistrar)
-        boolean configureHibernateListener = springConfig.containsBean("sessionFactory")
-        if (configureHibernateListener) {
+
+       // TODO: Was springConfig.containsBean("sessionFactory") but this seems to cause issues under 3.2.x, so
+       //       temporarily changed - need to check this actually works as currently untested with databases
+       boolean configureHibernateListener = true
+       if (configureHibernateListener)  {
             try {
-                hibernateConversationListener(org.grails.webflow.persistence.SessionAwareHibernateFlowExecutionListener, sessionFactory, transactionManager)
-                executionListenerLoader(org.springframework.webflow.execution.factory.StaticFlowExecutionListenerLoader, hibernateConversationListener)
+                webFlowHibernateConversationListener(org.grails.webflow.persistence.SessionAwareHibernateFlowExecutionListener, ref("sessionFactory"), ref("transactionManager"))
+                webFlowExecutionListenerLoader(org.springframework.webflow.execution.factory.StaticFlowExecutionListenerLoader, webFlowHibernateConversationListener)
             }
             catch (MissingPropertyException mpe) {
                 // no session factory, this is ok
                 log.info "Webflow loading without Hibernate integration. SessionFactory not found."
+                configureHibernateListener = false
             }
         }
 
         flowExecutionFactory(FlowExecutionImplFactory) {
             executionAttributes = new LocalAttributeMap(alwaysRedirectOnPause:true)
             if (configureHibernateListener) {
-                executionListenerLoader = ref("executionListenerLoader")
+                executionListenerLoader = ref("webFlowExecutionListenerLoader")
             }
         }
 
@@ -109,18 +128,21 @@ class WebFlowPluginSupport {
         flowExecutionFactory.executionKeyFactory = appCtx.getBean("flowExecutionRepository")
     }
 
-    static doWithDynamicMethods = { appCtx ->
+    //
+    // TODO: This is a hack at present - need to know how to do this properly
+    //
+    static doWithDynamicMethods = { appCtx, application ->
 
+        // Manually wire this... :P
+        FlowAwareDefaultRequestStateLookupStrategy lookupStrategy = appCtx.getBean(FlowAwareDefaultRequestStateLookupStrategy)
+        lookupStrategy.grailsApplication = application
+        GrailsFlowHandlerMapping grailsFlowHandlerMapping = appCtx.getBean(GrailsFlowHandlerMapping)
+        grailsFlowHandlerMapping.grailsApplication = application
+        UrlConverter urlConverter = appCtx.getBean(UrlConverter)
+
+        // Find instances of ...Flow closures in the controller
         for (GrailsControllerClass c in application.controllerClasses) {
-            for (flow in c.flows) {
-                def flowId = ("${c.logicalPropertyName}/" + flow.key).toString()
-
-                def builder = new FlowBuilder(flowId, flow.value,appCtx.flowBuilderServices, appCtx.flowRegistry)
-                builder.viewPath = "/"
-                builder.applicationContext = appCtx
-                def assembler = new FlowAssembler(builder, builder.getFlowBuilderContext())
-                appCtx.flowRegistry.registerFlowDefinition new DefaultFlowHolder(assembler)
-            }
+            registerFlowsForController(appCtx, c)
         }
 
         RequestControlContext.metaClass.getFlow = { -> delegate.flowScope }
@@ -150,7 +172,94 @@ class WebFlowPluginSupport {
         MutableAttributeMap.metaClass.putAt = { String key, value -> delegate.put(key,value) }
     }
 
-    static onChange = { event ->
+    private static void registerFlowsForController(appCtx, GrailsControllerClass c) {
+        GrailsFlowHandlerMapping grailsFlowHandlerMapping = appCtx.getBean(GrailsFlowHandlerMapping)
+        UrlConverter urlConverter = appCtx.getBean(UrlConverter)
+
+        // Clear any old mappings...
+        grailsFlowHandlerMapping.clearFlowMappingsForController(c)
+
+        Map<String, Closure> flows = [:]
+        final String FLOW_SUFFIX = "Flow"
+        ClassPropertyFetcher classPropertyFetcher = ClassPropertyFetcher.forClass(c.clazz)
+        for (PropertyDescriptor propertyDescriptor : classPropertyFetcher.getPropertyDescriptors()) {
+            Method readMethod = propertyDescriptor.getReadMethod();
+            if (readMethod != null && !Modifier.isStatic(readMethod.getModifiers())) {
+                final Class<?> propertyType = propertyDescriptor.getPropertyType();
+                if ((propertyType == Object.class || propertyType == Closure.class) && propertyDescriptor.getName().endsWith(FLOW_SUFFIX)) {
+                    String closureName = propertyDescriptor.getName();
+                    flows.put(closureName, getPropertyValue(classPropertyFetcher, closureName, Closure.class, c.clazz));
+                }
+            }
+        }
+        // Register the flows...
+        if(flows.size() > 0) {
+            String controllerPath = "/" + urlConverter.toUrlElement(c.name);
+            grailsFlowHandlerMapping.registerFlowMappingPattern(controllerPath, c)
+            grailsFlowHandlerMapping.registerFlowMappingPattern(controllerPath + "/", c)
+        }
+        for (flow in flows) {
+            String flowName = flow.key.substring(0, flow.key.length() - FLOW_SUFFIX.length());
+            def flowId = ("${c.logicalPropertyName}/" + flowName).toString()
+            def builder = new FlowBuilder(flowId, flow.value, appCtx.flowBuilderServices, appCtx.flowRegistry)
+            builder.viewPath = "/"
+            builder.applicationContext = appCtx
+            def assembler = new FlowAssembler(builder, builder.getFlowBuilderContext())
+            appCtx.flowRegistry.registerFlowDefinition new DefaultFlowHolder(assembler)
+            String controllerPath = "/" + urlConverter.toUrlElement(c.name) + "/";
+            String tmpUri = controllerPath + urlConverter.toUrlElement(flowName);
+            String tmpUri2 = tmpUri + "/" + "**";
+            String viewPath = "/" + GrailsNameUtils.getPropertyNameRepresentation(c.name) + "/" + flowName;
+            grailsFlowHandlerMapping.registerFlowMappingPattern(tmpUri, c)
+            grailsFlowHandlerMapping.registerFlowMappingPattern(tmpUri2, c)
+        }
+    }
+
+    public static <T,X> T getPropertyValue(ClassPropertyFetcher classPropertyFetcher, String propName, Class<T> type, Class<X> queriedType) {
+        T value = classPropertyFetcher.getPropertyValue(propName, type);
+        if (value == null) {
+            // Groovy workaround
+            return getGroovyProperty(classPropertyFetcher, propName, type, false, queriedType);
+        }
+        return returnOnlyIfInstanceOf(value, type);
+    }
+
+    private static <T,X> T getGroovyProperty(ClassPropertyFetcher classPropertyFetcher, String propName, Class<T> type, boolean onlyStatic, Class<X> queriedType) {
+        Object value = null;
+        if (GroovyObject.class.isAssignableFrom(queriedType)) {
+            MetaProperty metaProperty = getMetaClass().getMetaProperty(propName);
+            if (metaProperty != null) {
+                int modifiers = metaProperty.getModifiers();
+                if (Modifier.isStatic(modifiers)) {
+                    value = metaProperty.getProperty(queriedType);
+                }
+                else if (!onlyStatic) {
+                    value = metaProperty.getProperty(getReferenceInstance(classPropertyFetcher));
+                }
+            }
+        }
+        return returnOnlyIfInstanceOf(value, type);
+    }
+
+    private static Object getReferenceInstance(ClassPropertyFetcher classPropertyFetcher) {
+        Object obj = classPropertyFetcher.getReference();
+        if (obj instanceof GroovyObject) {
+            ((GroovyObject)obj).setMetaClass(getMetaClass());
+        }
+        return obj;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T returnOnlyIfInstanceOf(Object value, Class<T> type) {
+        if ((value != null) && (type==Object.class || GrailsClassUtils.isGroovyAssignableFrom(type, value.getClass()))) {
+            return (T)value;
+        }
+
+        return null;
+    }
+
+    // TODO: Untested - may not work...
+    static onChange = { event, application ->
         ApplicationContext appCtx = event.ctx
         FlowDefinitionRegistry flowRegistry = appCtx.flowRegistry
         GrailsControllerClass controller = application.getControllerClass(event.source.name)
@@ -167,14 +276,7 @@ class WebFlowPluginSupport {
             // in order to configure itself correctly
             registry.removeMetaClass controllerClass
             controller.getReference().getWrappedInstance().metaClass = registry.getMetaClass(controllerClass)
-            for (flow in controller.flows) {
-                def FlowBuilder builder = new FlowBuilder(("${controller.logicalPropertyName}/" + flow.key).toString(), flow.value, appCtx.flowBuilderServices, flowRegistry)
-                builder.viewPath = "/"
-                builder.applicationContext = event.ctx
-
-                FlowAssembler flowAssembler = new FlowAssembler(builder,builder.getFlowBuilderContext())
-                flowRegistry.registerFlowDefinition(new DefaultFlowHolder(flowAssembler))
-            }
+            registerFlowsForController(appCtx, controllerClass)
         }
         finally {
             registry.setMetaClass controllerClass, currentMetaClass

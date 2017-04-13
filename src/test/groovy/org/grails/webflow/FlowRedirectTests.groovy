@@ -1,7 +1,7 @@
 package org.grails.webflow
 
 import grails.util.MockHttpServletResponse
-import org.codehaus.groovy.grails.web.servlet.GrailsApplicationAttributes
+import org.grails.web.servlet.DefaultGrailsApplicationAttributes
 import org.grails.web.servlet.mvc.GrailsWebRequest
 import org.grails.webflow.support.AbstractGrailsTagAwareFlowExecutionTests
 import org.springframework.mock.web.MockHttpServletRequest
@@ -34,7 +34,7 @@ class FlowRedirectTests extends AbstractGrailsTagAwareFlowExecutionTests {
     void testRedirectToActionWithoutSpecifyingController() {
         def webRequest = new GrailsWebRequest(
                 new MockHttpServletRequest(), new MockHttpServletResponse(), new MockServletContext())
-        webRequest.currentRequest.setAttribute GrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE, 'mycontroller'
+        webRequest.currentRequest.setAttribute DefaultGrailsApplicationAttributes.CONTROLLER_NAME_ATTRIBUTE, 'mycontroller'
         RequestContextHolder.requestAttributes = webRequest
         try {
             startFlow()
@@ -59,7 +59,7 @@ class FlowRedirectTests extends AbstractGrailsTagAwareFlowExecutionTests {
                 redirect(controller:"test", action:"foo")
             }
             test2 {
-                redirect(controller:"test", action:"foo", id:params.id)
+                redirect(controller:"test", action:"foo", id: params.id)
             }
             test3 {
                 redirect(action:"foo")

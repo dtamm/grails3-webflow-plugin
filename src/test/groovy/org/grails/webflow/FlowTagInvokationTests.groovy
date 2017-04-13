@@ -2,16 +2,19 @@ package org.grails.webflow
 
 import org.grails.core.artefact.ControllerArtefactHandler
 import org.grails.webflow.support.AbstractGrailsTagAwareFlowExecutionTests
-import org.codehaus.groovy.grails.web.servlet.GrailsApplicationAttributes
+import org.grails.web.servlet.DefaultGrailsApplicationAttributes
+import org.junit.Ignore
 
 /**
  * @author Graeme Rocher
  * @since 0.4
  */
+// No longer used as LinkGenerator no longer does this - (qualify links with execution=?)
+@Ignore
 class FlowTagInvokationTests extends AbstractGrailsTagAwareFlowExecutionTests {
 
     void testRegularTagInvokation() {
-        request[GrailsApplicationAttributes.CONTROLLER] = ga.getControllerClass("TestController").newInstance()
+        request[DefaultGrailsApplicationAttributes.CONTROLLER] = ga.getControllerClass("TestController").newInstance()
 
         String.metaClass.encodeAsHTML = {-> delegate }
 
