@@ -14,40 +14,21 @@
  */
 package org.grails.webflow.engine.builder
 
-import grails.core.GrailsDomainClassProperty
 import grails.util.GrailsNameUtils
-import grails.util.Holders
-import grails.validation.ConstraintsEvaluator
-import grails.web.databinding.DataBindingUtils
-import org.codehaus.groovy.grails.web.binding.UriEditor
-
+import grails.web.databinding.DataBinder
 import org.grails.core.support.GrailsDomainConfigurationUtil
-import org.grails.validation.DefaultConstraintEvaluator
-import org.grails.web.beans.PropertyEditorRegistryUtils
-import org.grails.web.servlet.mvc.GrailsWebRequest
-import org.grails.web.servlet.DefaultGrailsApplicationAttributes
-import grails.web.databinding.GrailsWebDataBinder
+import org.grails.web.util.GrailsApplicationAttributes
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import org.springframework.beans.PropertyEditorRegistry
 import org.springframework.beans.factory.config.AutowireCapableBeanFactory
-import org.springframework.beans.propertyeditors.CurrencyEditor
-import org.springframework.beans.propertyeditors.LocaleEditor
-import org.springframework.beans.propertyeditors.TimeZoneEditor
 import org.springframework.validation.Errors
-import org.springframework.validation.Validator
 import org.springframework.web.context.request.RequestContextHolder as RCH
-import org.springframework.web.multipart.support.ByteArrayMultipartFileEditor
-import org.springframework.web.multipart.support.StringMultipartFileEditor
-import org.springframework.web.servlet.support.RequestContextUtils
 import org.springframework.webflow.action.AbstractAction
 import org.springframework.webflow.core.collection.LocalAttributeMap
 import org.springframework.webflow.execution.Event
 import org.springframework.webflow.execution.RequestContext
 
-import javax.servlet.http.HttpServletRequest
-
-/**
+ /**
  * Invokes a closure as a Webflow action placing the returned model within the flow scope.
  *
  * @author Graeme Rocher
@@ -63,7 +44,6 @@ class ClosureInvokingAction extends AbstractAction {
     def noOfParams
     boolean hasCommandObjects
     def applicationContext
-    def grailsApplication
 
     ClosureInvokingAction(Closure callable) {
         this.callable = callable
@@ -79,8 +59,7 @@ class ClosureInvokingAction extends AbstractAction {
                     RCH.currentRequestAttributes().setAttribute("${co.name}_${delegate.hashCode()}_errors",errors,0)
                 }
                 co.metaClass.hasErrors = {-> errors?.hasErrors() ? true : false }
-                def constrainedProperties = new DefaultConstraintEvaluator().evaluate(co.newInstance(), (GrailsDomainClassProperty[])null)
-                //def constrainedProperties = GrailsDomainConfigurationUtil.evaluateConstraints((Object)co.newInstance())
+                def constrainedProperties = GrailsDomainConfigurationUtil.evaluateConstraints(co.newInstance())
                 co.metaClass.getConstraints = {-> constrainedProperties }
                 co.metaClass.validate = {->
                     errors = new org.springframework.validation.BeanPropertyBindingResult(delegate, delegate.class.name)
@@ -126,7 +105,8 @@ class ClosureInvokingAction extends AbstractAction {
 
                     def params = noOfParams > 1 ? actionDelegate.params[GrailsNameUtils.getPropertyName(instance.class)] : actionDelegate.params
                     if (params) {
-                        DataBindingUtils.bindObjectToInstance(instance, params)
+                        def binder = GrailsDataBinder.createBinder(instance, instance.class.name, actionDelegate.request)
+                        binder.bind(params)
                     }
                     instance.validate()
                     commandInstances << instance
@@ -166,7 +146,7 @@ class ClosureInvokingAction extends AbstractAction {
                 if (entry.value instanceof GroovyObject) {
                     def errors = entry.value.errors
                     if (errors?.hasErrors()) {
-                        context.flashScope.put("${DefaultGrailsApplicationAttributes.ERRORS}_${entry.key}", errors)
+                        context.flashScope.put("${GrailsApplicationAttributes.ERRORS}_${entry.key}", errors)
                     }
                 }
             }
@@ -196,82 +176,5 @@ class ClosureInvokingAction extends AbstractAction {
         }
 
         return result(name,name, args)
-    }
-
-    /**
-     * Utility method for creating a GrailsDataBinder instance
-     *
-     * @param target The target object to bind to
-     * @param objectName The name of the object
-     * @param request A request instance
-     * @return A GrailsDataBinder instance
-     */
-    // TODO: Remove
-    public static def createBinder(Object target, String objectName, HttpServletRequest request) {
-        final GrailsWebRequest webRequest = GrailsWebRequest.lookup(request);
-        PropertyEditorRegistry registry = webRequest.applicationContext.getBean(PropertyEditorRegistry)
-        def binder = createBinder(target, registry);
-        initializeFromWebRequest(binder, webRequest, target);
-
-        Locale locale = RequestContextUtils.getLocale(request);
-        registerCustomEditors(webRequest, registry, locale);
-        return binder;
-    }
-
-    private static void initializeFromWebRequest(GrailsWebDataBinder binder, GrailsWebRequest webRequest, Object target) {
-        if (webRequest == null) {
-            return;
-        }
-
-//        binder.setGrailsApplication(webRequest.getAttributes().getGrailsApplication());
-
-        if (webRequest.getApplicationContext() != null && webRequest.getApplicationContext().containsBean("dataBindingValidator")) {
-            Validator validator = webRequest.getApplicationContext().getBean("dataBindingValidator", Validator.class);
-            if (target != null && validator.supports(target.getClass())) {
-//                binder.setValidator(validator);
-            }
-        }
-    }
-
-    /**
-     * Utility method for creating a GrailsDataBinder instance
-     *
-     * @param target The target object to bind to
-     * @param objectName The name of the object
-     * @return A GrailsDataBinder instance
-     */
-    // TODO: Remove
-    public static def createBinder(Object target, PropertyEditorRegistry registry) {
-
-//        GrailsWebDataBinder binder = new GrailsWebDataBinder(target);
-        GrailsWebDataBinder binder = new GrailsWebDataBinder(Holders.findApplication());
-//        GrailsDataBinder binder = new GrailsDataBinder(target, objectName);
-        org.springframework.validation.DataBinder dataBinder = new org.springframework.validation.DataBinder(target);
-        dataBinder.registerCustomEditor(byte[].class, new ByteArrayMultipartFileEditor());
-        dataBinder.registerCustomEditor(String.class, new StringMultipartFileEditor());
-        dataBinder.registerCustomEditor(Currency.class, new CurrencyEditor());
-        dataBinder.registerCustomEditor(Locale.class, new LocaleEditor());
-        dataBinder.registerCustomEditor(TimeZone.class, new TimeZoneEditor());
-        dataBinder.registerCustomEditor(URI.class, new UriEditor());
-
-        final GrailsWebRequest webRequest = GrailsWebRequest.lookup();
-        if (webRequest != null) {
-            initializeFromWebRequest(binder, webRequest, target);
-            Locale locale = RequestContextUtils.getLocale(webRequest.getCurrentRequest());
-            registerCustomEditors(webRequest, registry, locale);
-        }
-
-        return binder;
-    }
-
-    /**
-     * Registers all known
-     *
-     * @param grailsWebRequest
-     * @param registry
-     * @param locale
-     */
-    public static void registerCustomEditors(GrailsWebRequest grailsWebRequest, PropertyEditorRegistry registry, Locale locale) {
-        PropertyEditorRegistryUtils.registerCustomEditors(grailsWebRequest, registry, locale);
     }
 }
